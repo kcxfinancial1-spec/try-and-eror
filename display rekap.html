@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>REKAP.in AJA</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f7fa; margin: 0; padding: 0; }
+    header { 
+      background: linear-gradient(90deg, #f39c12, #e74c3c, #f1c40f);
+      color: white; padding: 10px; 
+      text-align: center; 
+      border-bottom-left-radius: 10px; 
+      border-bottom-right-radius: 10px;
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      gap: 5px;
+    }
+    header img { height: 150px; }
+    header h1 { font-family: Cooper Std Black, sans-serif; margin: 0; font-size: 24px; }
+    header p { font-family: Lucida Handwriting, sans-serif; font-size: 14px; margin-top: 5px; }
+    .container { display: grid; grid-template-columns: 2fr 1fr; gap: 15px; padding: 20px; max-width: 1000px; margin: auto; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 3px 8px rgba(0,0,0,0.1); padding: 15px; }
+    .card h2 { font-size: 16px; margin-bottom: 10px; color: #333; }
+    input, select { padding: 8px; border: 1px solid #ddd; border-radius: 8px; margin-right: 5px; }
+    button { padding: 8px 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin: 5px 0; }
+    .btn-primary { background: #3498db; color: white; }
+    .btn-danger { background: #e74c3c; color: white; }
+    .btn-success { background: #2ecc71; color: white; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; font-size: 14px; }
+    th { background: #f8f8f8; }
+    td button { font-size: 12px; padding: 4px 10px; }
+    .summary { display: flex; justify-content: space-around; margin-top: 10px; font-weight: bold; }
+    .summary div { background: #f8f9fa; padding: 10px; border-radius: 10px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
+    footer { text-align: center; font-size: 12px; color: #777; margin: 15px 0; }
+    footer span { color: red; }
+    canvas { max-height: 300px !important; }
+    .chart-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 50px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    .chart-wrapper canvas {
+      background: #fff;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      width: 400px !important;
+      height: 600px !important;
+    }
+    @media (max-width: 1000px) {
+      .chart-wrapper { flex-direction: column; gap: 20px; }
+    }
+  </style>
+</head>
+<body>
+<header>
+    <img src="logo.png" alt="Logo">
+    <div>
+    <h1>Rekap.in Aja</h1>
+    <p>catat seluruh keuanganmu disini</p>
+  </div>
+</header>
+
+<div class="container">
+  <div>
+    <div class="card">
+      <h2>Tambah Transaksi</h2>
+      <select id="jenis">
+        <option value="Pemasukan">Pemasukan</option>
+        <option value="Pengeluaran">Pengeluaran</option>
+      </select>
+      <input type="text" id="nominal" placeholder="Contoh: 10.000">
+      <input type="text" id="keterangan" placeholder="Misal: Gaji, Makan, Transport">
+      <button class="btn-primary" onclick="tambahTransaksi()">+ Tambah</button>
+      <br><br>
+      <input type="month" id="filterBulan" onchange="renderTabel()">
+      <button class="btn-success" onclick="exportCSV()">⬇ Export CSV</button>
+      <input type="file" id="importFile" accept=".csv">
+      <button class="btn-success" onclick="importCSV()">⬆ Import CSV</button>
+      <button class="btn-primary" onclick="cetakPDF()">🖨 Cetak PDF</button>
+      <button class="btn-danger" onclick="hapusSemua()">Hapus Semua</button>
+    </div>
+
+    <div class="card">
+      <h2>Daftar Transaksi (<span id="count"></span> transaksi)</h2>
+      <table>
+        <thead>
+          <tr><th>Tanggal</th><th>Keterangan</th><th>Jenis</th><th>Jumlah (Rp)</th><th>Aksi</th></tr>
+        </thead>
+        <tbody id="tabel"></tbody>
+      </table>
+      <div class="summary">
+        <div id="totalMasuk">Total Pemasukan: Rp 0</div>
+        <div id="totalKeluar">Total Pengeluaran: Rp 0</div>
+        <div id="saldo">Saldo: Rp 0</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Visualisasi</h2>
+      <div class="chart-wrapper">
+        <canvas id="pieChart"></canvas>
+        <canvas id="barChart"></canvas>
+      </div>
+      <p style="font-size: 12px; margin-top: 10px; color:#555;">
+        Tip: Ketuk tombol Hapus di baris untuk menghapus transaksi tertentu. Gunakan Export/Import untuk backup data.
+      </p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Created by KCXCK — data tersimpan secara lokal di browser Anda.
+</footer>
+
+<script>
+let transaksi = JSON.parse(localStorage.getItem("transaksi")) || [];
+
+const formatRupiah = angka => angka ? angka.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") : "0";
+
+document.getElementById("nominal").addEventListener("input", function() {
+  let val = this.value.replace(/\./g, "");
+  if (!isNaN(val) && val !== "") this.value = formatRupiah(val);
+});
+
+function tambahTransaksi() {
+  const jenis = document.getElementById("jenis").value;
+  const nominal = parseInt(document.getElementById("nominal").value.replace(/\./g, "")) || 0;
+  const keterangan = document.getElementById("keterangan").value.trim();
+  if (!nominal) return alert("Nominal tidak valid!");
+  if (!keterangan) return alert("Keterangan wajib diisi!");
+  transaksi.push({ id: Date.now(), tanggal: new Date().toISOString(), jenis, nominal, keterangan });
+  simpan();
+  renderTabel();
+  document.getElementById("nominal").value = "";
+  document.getElementById("keterangan").value = "";
+}
+
+function hapusTransaksi(id) {
+  transaksi = transaksi.filter(t => t.id !== id);
+  simpan();
+  renderTabel();
+}
+
+function hapusSemua() {
+  if (confirm("Yakin hapus semua data? Backup CSV dulu?")) {
+    exportCSV(); 
+    transaksi = [];
+    simpan();
+    renderTabel();
+  }
+}
+
+function simpan() { localStorage.setItem("transaksi", JSON.stringify(transaksi)); }
+
+function renderTabel() {
+  const tbody = document.getElementById("tabel");
+  const filter = document.getElementById("filterBulan").value;
+  tbody.innerHTML = "";
+  let totalMasuk = 0, totalKeluar = 0;
+
+  let filtered = transaksi.filter(t => {
+    if (!filter) return true;
+    const d = new Date(t.tanggal);
+    return d.getFullYear() === parseInt(filter.slice(0,4)) && (d.getMonth()+1) === parseInt(filter.slice(5,7));
+  });
+
+  filtered.forEach(t => {
+    const nom = t.nominal || 0;
+    if (t.jenis === "Pemasukan") totalMasuk += nom;
+    else totalKeluar += nom;
+    tbody.innerHTML += `
+      <tr>
+        <td>${new Date(t.tanggal).toLocaleString("id-ID")}</td>
+        <td>${t.keterangan}</td>
+        <td>${t.jenis}</td>
+        <td>${formatRupiah(nom)}</td>
+        <td><button class="btn-danger" onclick="hapusTransaksi(${t.id})">Hapus</button></td>
+      </tr>`;
+  });
+
+  document.getElementById("count").innerText = filtered.length;
+  document.getElementById("totalMasuk").innerText = "Total Pemasukan: Rp " + formatRupiah(totalMasuk);
+  document.getElementById("totalKeluar").innerText = "Total Pengeluaran: Rp " + formatRupiah(totalKeluar);
+  document.getElementById("saldo").innerText = "Saldo: Rp " + formatRupiah(totalMasuk - totalKeluar);
+
+  updateChart(totalMasuk, totalKeluar);
+}
+
+let pieChart, barChart;
+function updateChart(masuk, keluar) {
+  if (pieChart) pieChart.destroy();
+  if (barChart) barChart.destroy();
+
+  masuk = masuk || 0; keluar = keluar || 0;
+  const total = masuk + keluar;
+
+  // PIE CHART
+  pieChart = new Chart(document.getElementById("pieChart"), {
+    type:'pie',
+    data:{ labels:["Pemasukan","Pengeluaran"], datasets:[{ data:[masuk,keluar], backgroundColor:["#2ecc71","#e74c3c"], offset:10 }] },
+    options:{ plugins:{
+      tooltip:{ callbacks:{ label: ctx => { let val = ctx.raw||0; let pct = total?((val/total)*100).toFixed(1):0; return ctx.label+": Rp "+formatRupiah(val)+" ("+pct+"%)"; } } },
+      datalabels:{ color:'#fff', font:{weight:'bold'}, formatter: val => { let pct = total?((val/total)*100).toFixed(1):0; return pct+"%"; } }
+    }},
+    plugins:[ChartDataLabels]
+  });
+
+  // BAR CHART
+  barChart = new Chart(document.getElementById("barChart"), {
+    type:'bar',
+    data:{ labels:["Pemasukan","Pengeluaran"], datasets:[{ data:[masuk,keluar], backgroundColor:["#2ecc71","#e74c3c"] }] },
+    options:{ scales:{ x:{grid:{display:false}}, y:{beginAtZero:true} },
+      datasets:{ bar:{categoryPercentage:0.6, barPercentage:1} },
+      plugins:{ legend:{display:false}, datalabels:{ anchor:'end', align:'top', color:'#000', font:{weight:'bold'}, formatter: v => "Rp "+formatRupiah(v||0) } }
+    },
+    plugins:[ChartDataLabels]
+  });
+}
+
+function exportCSV() {
+  let csv="Tanggal,Keterangan,Jenis,Nominal\n";
+  transaksi.forEach(t => csv+=`${t.tanggal},${t.keterangan},${t.jenis},${t.nominal||0}\n`);
+  let blob=new Blob([csv],{type:"text/csv"});
+  let link=document.createElement("a");
+  link.href=URL.createObjectURL(blob);
+  link.download="rekap_keuangan.csv";
+  link.click();
+}
+
+function importCSV() {
+  const file = document.getElementById('importFile').files[0];
+  if(!file) return alert("Pilih file CSV terlebih dahulu!");
+  const reader=new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split('\n').slice(1);
+    let imported = [];
+    for(let line of lines){
+      if(!line.trim()) continue;
+      let [tanggal,keterangan,jenis,nominal] = line.split(',');
+      imported.push({ id: Date.now()+Math.random(), tanggal: tanggal.trim(), keterangan:keterangan.trim(), jenis:jenis.trim(), nominal:parseInt(nominal)||0 });
+    }
+    transaksi = [...transaksi,...imported];
+    simpan();
+    renderTabel();
+    alert(imported.length + " transaksi berhasil diimport!");
+    document.getElementById('importFile').value = "";
+  };
+  reader.readAsText(file);
+}
+
+function cetakPDF() {
+  let totalMasuk = transaksi.filter(t=>t.jenis==='Pemasukan').reduce((a,b)=>a+(b.nominal||0),0);
+  let totalKeluar = transaksi.filter(t=>t.jenis==='Pengeluaran').reduce((a,b)=>a+(b.nominal||0),0);
+  let saldo = totalMasuk - totalKeluar;
+
+  let content = `
+      <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:20px;">
+      <img src="logo.png" style="height:100px; display:block;">
+      <h2 style="margin:0;">Rekap Transaksi Saya</h2>
+    </div>
+    </div>
+    <table border="1" cellspacing="0" cellpadding="5" style="width:100%;border-collapse:collapse;text-align:center;">
+      <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Jenis</th><th>Jumlah (Rp)</th></tr></thead>
+      <tbody>${transaksi.map(t=>`<tr><td>${new Date(t.tanggal).toLocaleString("id-ID")}</td><td>${t.keterangan}</td><td>${t.jenis}</td><td>${formatRupiah(t.nominal||0)}</td></tr>`).join('')}</tbody>
+    </table>
+    <br>
+    <div><strong>Total Pemasukan:</strong> Rp ${formatRupiah(totalMasuk)}</div>
+    <div><strong>Total Pengeluaran:</strong> Rp ${formatRupiah(totalKeluar)}</div>
+    <div><strong>Saldo:</strong> Rp ${formatRupiah(saldo)}</div>`;
+
+  let win = window.open('', '', 'height=700,width=900');
+  win.document.write('<html><head><title>Rekap Transaksi</title></head><body>');
+  win.document.write(content);
+  win.document.write('</body></html>');
+  win.document.close();
+  win.print();
+}
+
+renderTabel();
+</script>
+</body>
+</html>
